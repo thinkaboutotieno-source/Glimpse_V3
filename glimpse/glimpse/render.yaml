@@ -1,0 +1,42 @@
+# Render Blueprint for Glimpse
+# On Render: New → Blueprint → pick this repository → Apply.
+# Schema: https://render.com/schema/render.yaml.json
+
+services:
+  - type: web
+    name: glimpse
+    runtime: node
+    # A persistent disk needs a paid instance; "starter" is the smallest.
+    plan: starter
+    # Frankfurt is Render's closest region to East Africa and Europe.
+    # Other choices: oregon, ohio, virginia, singapore. It can't be changed later.
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    # Posts and uploads live on this disk so they survive restarts and deploys.
+    disk:
+      name: glimpse-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATA_DIR
+        value: /var/data/data
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      # Your password for /admin.html. Render generates it; find it under the service's Environment tab.
+      - key: ADMIN_TOKEN
+        generateValue: true
+      # Keeps anonymous poster IDs stable. Never change it once people are posting.
+      - key: GLIMPSE_SECRET
+        generateValue: true
+      - key: REPORT_HIDE_THRESHOLD
+        value: "3"
+      # Optional extras (add them under Environment on Render when you want them):
+      #   SUPERNOVA_AT          likes + reactions within an hour that make a post explode (default 25)
+      #   LIBRETRANSLATE_URL    a LibreTranslate server for the Translate button, e.g. https://libretranslate.com
+      #   LIBRETRANSLATE_KEY    its API key, if it needs one
+      #   BAN_BY_IP             "true" to also ban IP addresses (see README)

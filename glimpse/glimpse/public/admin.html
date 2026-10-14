@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Glimpse · Moderation</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #f3f1ee; --card: #fff; --ink: #1d1b19; --soft: #6c6863; --line: #e2ddd6; --red: #b4232f; --amber: #a86500; --green: #1f7a45; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #141312; --card: #1f1d1b; --ink: #f2efea; --soft: #a29d96; --line: #34312d; --red: #ff7a85; --amber: #ffb547; --green: #5fd38f; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 14px; padding: 14px 22px; background: var(--card); border-bottom: 1px solid var(--line); }
+    header h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
+    header .stats { color: var(--soft); font-size: 13px; }
+    header .spacer { flex: 1; }
+    button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 7px 12px; }
+    button:hover { border-color: var(--soft); }
+    button.danger { color: #fff; background: var(--red); border-color: var(--red); }
+    button.ghost { border: 0; background: none; color: var(--soft); text-decoration: underline; padding: 0; }
+    main { max-width: 980px; margin: 0 auto; padding: 22px; }
+    .login { max-width: 380px; margin: 12vh auto; padding: 24px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; display: grid; gap: 12px; }
+    .login h1 { margin: 0; font-size: 22px; }
+    .login p { margin: 0; color: var(--soft); font-size: 14px; }
+    input { font: inherit; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+    .err { color: var(--red); font-size: 14px; min-height: 1em; }
+    .item { display: grid; grid-template-columns: 180px 1fr; gap: 18px; padding: 16px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+    .preview { width: 180px; aspect-ratio: 1 / 1.1; border-radius: 10px; overflow: hidden; background: #000; display: grid; place-items: center; }
+    .preview img, .preview video { width: 100%; height: 100%; object-fit: cover; }
+    .preview .text { padding: 14px; color: #f4efe6; background: #2a2622; width: 100%; height: 100%; overflow: auto; font-size: 13.5px; white-space: pre-line; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--soft); }
+    .meta strong { color: var(--ink); font-size: 15px; }
+    .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+    .badge.hidden { color: var(--red); }
+    .badge.visible { color: var(--green); }
+    .badge.capsule { color: var(--amber); }
+    .caption { margin: 8px 0; }
+    .reports { margin: 10px 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13.5px; }
+    .reports .reason { font-weight: 600; }
+    .reports .note { color: var(--soft); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .section { margin: 26px 0 12px; font-size: 16px; }
+    .item--reply { grid-template-columns: 180px 1fr; }
+    .empty { text-align: center; padding: 60px 20px; color: var(--soft); }
+    .empty strong { display: block; color: var(--ink); font-size: 18px; margin-bottom: 4px; }
+    @media (max-width: 640px) { .item { grid-template-columns: 1fr; } .preview { width: 100%; aspect-ratio: 16 / 10; } }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+  (() => {
+    const app = document.getElementById("app");
+    const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const when = ts => new Date(ts).toLocaleString("en", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+    const REASONS = { spam: "Spam or scam", harassment: "Harassment or hate", sexual: "Nudity or sexual", violence: "Violence or gore", "self-harm": "Self-harm", illegal: "Illegal", other: "Other" };
+    let token = sessionStorage.getItem("glimpse:admin") || "";
+
+    async function api(path, opts = {}) {
+      const r = await fetch(path, { ...opts, headers: { "X-Admin-Token": token, ...(opts.headers || {}) } });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw Object.assign(new Error(body.error || `Error ${r.status}`), { status: r.status });
+      return body;
+    }
+
+    function login(message = "") {
+      app.innerHTML = `<form class="login" id="login">
+        <h1>Glimpse moderation</h1>
+        <p>Enter the ADMIN_TOKEN you set on the server.</p>
+        <input type="password" id="tok" autocomplete="current-password" aria-label="Admin token" required>
+        <div class="err" role="alert">${esc(message)}</div>
+        <button type="submit">Sign in</button>
+      </form>`;
+      document.getElementById("login").addEventListener("submit", e => {
+        e.preventDefault();
+        token = document.getElementById("tok").value.trim();
+        sessionStorage.setItem("glimpse:admin", token);
+        load();
+      });
+      document.getElementById("tok").focus();
+    }
+
+    function preview(p) {
+      if (p.type === "photo") return `<img src="${esc(p.url)}" alt="">`;
+      if (p.type === "voice") return `<div class="text">🎙 Voice note (${Math.round(p.duration || 0)}s)${p.caption ? `\n\n${esc(p.caption)}` : ""}<audio src="${esc(p.url)}" controls preload="none" style="width:100%;margin-top:10px"></audio></div>`;
+      if (p.type === "video") return `<video src="${esc(p.url)}" poster="${esc(p.thumb)}" controls preload="none"></video>`;
+      return `<div class="text">${esc(p.text)}${p.quoteBy ? `\n\n– ${esc(p.quoteBy)}` : ""}</div>`;
+    }
+
+    function render(data) {
+      const { queue, replies = [], comets = [], bans, total, threshold, walls = 0 } = data;
+      app.innerHTML = `<header>
+          <h1>Moderation</h1>
+          <span class="stats">${queue.length + replies.length + comets.length} to review · ${total} posts · ${walls} private walls · ${bans} banned · hidden after ${threshold} reports</span>
+          <span class="spacer"></span>
+          <button id="refresh">Refresh</button>
+          <button class="ghost" id="logout">Sign out</button>
+        </header>
+        <main>${queue.length || replies.length || comets.length
+          ? queue.map(item).join("") + (replies.length ? `<h2 class="section">Reported replies</h2>` + replies.map(replyItem).join("") : "")
+            + (comets.length ? `<h2 class="section">Reported comets</h2>` + comets.map(cometItem).join("") : "")
+          : `<div class="empty"><strong>Nothing to review</strong>Reported posts and replies will appear here.</div>`}</main>`;
+      document.getElementById("refresh").onclick = load;
+      document.getElementById("logout").onclick = () => { sessionStorage.removeItem("glimpse:admin"); token = ""; login(); };
+      app.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => act(b.dataset.id, b.dataset.act, b)));
+      app.querySelectorAll("[data-cact]").forEach(b => b.addEventListener("click", () => actComet(b.dataset.id, b.dataset.cact, b)));
+      app.querySelectorAll("[data-nova]").forEach(b => b.addEventListener("click", () => nova(b.dataset.nova, b)));
+      app.querySelectorAll("[data-ract]").forEach(b => b.addEventListener("click", () => actReply(b.dataset.post, b.dataset.id, b.dataset.ract, b)));
+    }
+
+    function item(p) {
+      const counts = {};
+      p.reports.forEach(r => { counts[r.reason] = (counts[r.reason] || 0) + 1; });
+      const sealed = p.opensAt && p.opensAt > Date.now();
+      return `<article class="item">
+        <div class="preview">${preview(p)}</div>
+        <div>
+          <div class="meta">
+            <strong>${esc(p.author || "Anonymous")}</strong>
+            <span>${esc(p.type)} · ${when(p.createdAt)}${p.wallName ? ` · wall: ${esc(p.wallName)}` : ""}</span>
+            <span title="Anonymous poster ID">${p.authorId ? `ID ${esc(p.authorId)} · ${p.postsByAuthor} post${p.postsByAuthor === 1 ? "" : "s"}` : "No poster ID (sample or older post)"}</span>
+            <span class="badge ${p.hidden ? "hidden" : "visible"}">${p.hidden ? "Hidden" : "Visible"}</span>
+            ${sealed ? `<span class="badge capsule">Sealed until ${when(p.opensAt)}</span>` : ""}
+            ${p.audience === "friends" ? `<span class="badge capsule">Friends only</span>` : ""}
+          </div>
+          ${p.caption ? `<p class="caption">${esc(p.caption)}</p>` : ""}
+          <ul class="reports">
+            <li>${p.reporters} ${p.reporters === 1 ? "person" : "people"} reported this: ${Object.entries(counts).map(([k, n]) => `<span class="reason">${esc(REASONS[k] || k)}</span>${n > 1 ? ` ×${n}` : ""}`).join(", ") || "none"}</li>
+            ${p.reports.filter(r => r.note).map(r => `<li class="note">“${esc(r.note)}” · ${when(r.at)}</li>`).join("")}
+          </ul>
+          <div class="actions">
+            <button data-act="keep" data-id="${esc(p.id)}">Keep it (dismiss reports)</button>
+            <button data-act="remove" data-id="${esc(p.id)}">Remove post</button>
+            <button class="danger" data-act="ban" data-id="${esc(p.id)}">Remove and ban poster</button>
+            ${p.hidden ? "" : `<button data-nova="${esc(p.id)}" title="Make it explode on everyone's screen for a day">🌟 Make it a supernova</button>`}
+          </div>
+        </div>
+      </article>`;
+    }
+
+    function cometItem(c) {
+      return `<article class="item item--reply">
+        <div class="preview"><div class="text">☄️ “${esc(c.text)}”</div></div>
+        <div>
+          <div class="meta"><strong>Comet</strong><span>${when(c.createdAt)}${c.city ? ` · from ${esc(c.city)}, ${esc(c.region)}` : ""}</span></div>
+          <ul class="reports"><li>Reported ${c.reported} time${c.reported === 1 ? "" : "s"} by the people it reached.</li></ul>
+          <div class="actions">
+            <button data-cact="remove" data-id="${esc(c.id)}">Remove comet</button>
+            <button class="danger" data-cact="ban" data-id="${esc(c.id)}">Remove and ban sender</button>
+          </div>
+        </div>
+      </article>`;
+    }
+    async function actComet(id, action, btn) {
+      if (action === "ban" && !confirm("Remove this comet and stop its sender posting or sending comets?")) return;
+      btn.disabled = true;
+      try { await api(`/api/admin/comets/${encodeURIComponent(id)}/${action}`, { method: "POST" }); load(); }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    }
+    async function nova(id, btn) {
+      btn.disabled = true;
+      try { await api(`/api/admin/supernova/${encodeURIComponent(id)}`, { method: "POST" }); btn.textContent = "🌟 It's a supernova!"; }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    }
+    function replyItem(r) {
+      const counts = {};
+      r.reports.forEach(x => { counts[x.reason] = (counts[x.reason] || 0) + 1; });
+      return `<article class="item item--reply">
+        <div class="preview"><div class="text">“${esc(r.text)}”</div></div>
+        <div>
+          <div class="meta">
+            <strong>${esc(r.author || "Anonymous")}</strong>
+            <span>reply · ${when(r.createdAt)}</span>
+            <span>${r.authorId ? `ID ${esc(r.authorId)}` : "No poster ID"}</span>
+            <span class="badge ${r.hidden ? "hidden" : "visible"}">${r.hidden ? "Hidden" : "Visible"}</span>
+          </div>
+          <p class="caption">On the thought: “${esc((r.postText || "").slice(0, 140))}”</p>
+          <ul class="reports">
+            <li>${r.reporters} ${r.reporters === 1 ? "person" : "people"} reported this: ${Object.entries(counts).map(([k, n]) => `<span class="reason">${esc(REASONS[k] || k)}</span>${n > 1 ? ` ×${n}` : ""}`).join(", ")}</li>
+            ${r.reports.filter(x => x.note).map(x => `<li class="note">“${esc(x.note)}” · ${when(x.at)}</li>`).join("")}
+          </ul>
+          <div class="actions">
+            <button data-ract="keep" data-post="${esc(r.postId)}" data-id="${esc(r.id)}">Keep it</button>
+            <button data-ract="remove" data-post="${esc(r.postId)}" data-id="${esc(r.id)}">Remove reply</button>
+            <button class="danger" data-ract="ban" data-post="${esc(r.postId)}" data-id="${esc(r.id)}">Remove and ban</button>
+          </div>
+        </div>
+      </article>`;
+    }
+    async function actReply(postId, id, action, btn) {
+      const ask = { remove: "Remove this reply for everyone?", ban: "Remove this reply and stop this person posting again?" }[action];
+      if (ask && !confirm(ask)) return;
+      btn.disabled = true;
+      try { await api(`/api/admin/replies/${encodeURIComponent(postId)}/${encodeURIComponent(id)}/${action}`, { method: "POST" }); load(); }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    }
+
+    async function act(id, action, btn) {
+      const ask = { remove: "Remove this post for everyone?", ban: "Remove ALL of this person's posts and stop them posting again?" }[action];
+      if (ask && !confirm(ask)) return;
+      btn.disabled = true;
+      try { await api(`/api/admin/posts/${encodeURIComponent(id)}/${action}`, { method: "POST" }); load(); }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    }
+
+    async function load() {
+      if (!token) return login();
+      try { render(await api("/api/admin/queue")); }
+      catch (err) { if (err.status === 401 || err.status === 503) { sessionStorage.removeItem("glimpse:admin"); login(err.message); } else login(err.message); }
+    }
+    load();
+  })();
+  </script>
+</body>
+</html>

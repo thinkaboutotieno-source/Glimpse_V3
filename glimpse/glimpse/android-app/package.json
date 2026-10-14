@@ -1,0 +1,19 @@
+{
+  "name": "glimpse-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Glimpse as an Android app (Capacitor)",
+  "scripts": {
+    "prepare-web": "node prepare-www.js",
+    "sync": "node prepare-www.js && npx cap sync android",
+    "open": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}

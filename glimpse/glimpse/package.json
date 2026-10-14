@@ -1,0 +1,18 @@
+{
+  "name": "glimpse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An infinite, zoomable wall of photos, 30-second videos and quotes.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/api.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}
